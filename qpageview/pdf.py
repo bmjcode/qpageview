@@ -213,8 +213,19 @@ class PdfDocument(document.SingleSourceDocument):
         return self._document
 
 
+class PdfRenderImageCache(object):
+    def __init__(self, resolution):
+        self.resolution = resolution
+        self.pages = {}
+
+
 class PdfRenderer(render.AbstractRenderer):
     oversampleThreshold = 96
+
+    def __init__(self, cache=None):
+        super().__init__(cache)
+        # Cache for self.render_page()
+        self._pageCache = weakref.WeakKeyDictionary()
 
     def render(self, page, key, tile, paperColor=None):
         """Generate an image for the Page referred to by key."""
@@ -230,6 +241,7 @@ class PdfRenderer(render.AbstractRenderer):
         xres = 72.0 * key.width / s.width()
         yres = 72.0 * key.height / s.height()
         multiplier = 2 if xres < self.oversampleThreshold else 1
+
         # QtPdf forces us to render the entire page area
         image = self.render_image(doc, num,
             xres * multiplier, yres * multiplier,
@@ -251,6 +263,42 @@ class PdfRenderer(render.AbstractRenderer):
         are set.
 
         """
+        resolution = (xres, yres)
+        if doc not in self._pageCache:
+            print("Creating render cache")
+            self._pageCache[doc] = PdfRenderImageCache(resolution)
+        pageCache = self._pageCache[doc]
+
+        if pageCache.resolution != resolution:
+            # Invalidate the cache when the resolution changes
+            print("Resolution mismatch, emptying cache")
+            pageCache.pages.clear()
+            pageCache.resolution = resolution
+
+        print("render_image(", pageNum, ")", end="")
+        if pageNum in pageCache.pages:
+            print(" cached")
+            page = pageCache.pages[pageNum]
+        else:
+            print()
+            page = self._render_image(doc, pageNum, xres, yres, w, h, rotate)
+            pageCache.pages[pageNum] = page
+
+        if paperColor:
+            # QtPdf leaves the page background transparent, so we need to
+            # paint it ourselves.
+            image = page.copy()
+            painter = QPainter(image)
+            painter.fillRect(image.rect(), paperColor)
+            painter.drawImage(0, 0, page)
+            painter.end()
+            return image
+        else:
+            return page
+
+    def _render_image(self, doc, pageNum,
+                      xres=72.0, yres=72.0, w=-1, h=-1,
+                      rotate=Rotate_0, paperColor=None):
         RenderFlag = QPdfDocumentRenderOptions.RenderFlag
         with locking.lock(doc):
             options = QPdfDocumentRenderOptions()
@@ -266,19 +314,7 @@ class PdfRenderer(render.AbstractRenderer):
                 renderFlags |= RenderFlag.PathAliased.value
             options.setRenderFlags(RenderFlag(renderFlags))
 
-            renderedPage = doc.render(pageNum, QSize(int(w), int(h)), options)
-
-            if paperColor:
-                # QtPdf leaves the page background transparent, so we need to
-                # paint it ourselves.
-                image = renderedPage.copy()
-                painter = QPainter(image)
-                painter.fillRect(image.rect(), paperColor)
-                painter.drawImage(0, 0, renderedPage)
-                painter.end()
-                return image
-            else:
-                return renderedPage
+            return doc.render(pageNum, QSize(int(w), int(h)), options)
 
     def draw(self, page, painter, key, tile, paperColor=None):
         """Draw a tile on the painter.
