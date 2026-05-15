@@ -236,7 +236,7 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
             return super().render(page, key, tile, paperColor)
         else:
             # reuse the QImage returned by QPdfDocument.render() to save memory
-            target, image = self._renderTile(page, key, tile)
+            image = self._render(page, key, tile)
             if paperColor:
                 painter = QPainter(image)
                 painter.setCompositionMode(
@@ -251,17 +251,10 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
 
         """
         matrix = painter.deviceTransform()
-        target, image = self._renderTile(page, key, tile, matrix)
-        painter.drawImage(target, image, QRectF(image.rect()))
+        painter.drawImage(0, 0, self._render(page, key, tile, matrix))
 
-    def _renderTile(self, page, key, tile, matrix=None):
-        """Render a QImage of the specified tile's contents.
-
-        Returns a tuple (target, image) where `target` is a QRectF specifying
-        in device coordinates where to paint the image, and `image` is the
-        rendered image itself.
-
-        """
+    def _render(self, page, key, tile, matrix=None):
+        """The actual rendering logic shared by render() and draw()."""
         pageSize = page.pageSize()  # in points
         # key and tile coordinates scale with device resolution and zoom level
         source = QRectF(0, 0, key.width, key.height)
@@ -317,7 +310,7 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
 
-        return target, image
+        return image
 
 
 def load(source):
