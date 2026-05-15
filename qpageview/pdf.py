@@ -28,7 +28,7 @@ PDF rendering backend using QtPdf.
 import platform
 
 from PyQt6.QtCore import Qt, QByteArray, QModelIndex, QRect, QRectF, QSize, QUrl
-from PyQt6.QtGui import QTransform
+from PyQt6.QtGui import QPainter, QTransform
 from PyQt6.QtPdf import QPdfDocument, QPdfDocumentRenderOptions
 
 # Check for PDF link support (added in Qt 6.6)
@@ -228,6 +228,21 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
 
         """
         yield render.Tile(0, 0, width, height)
+
+    def render(self, page, key, tile, paperColor=None):
+        """Generate a QImage for tile of the Page."""
+        if key.rotation:
+            # this is only doable by drawing on a second QImage
+            return super().render(page, key, tile, paperColor)
+        else:
+            # reuse the QImage returned by QPdfDocument.render() to save memory
+            target, image = self._renderTile(page, key, tile)
+            if paperColor:
+                painter = QPainter(image)
+                painter.setCompositionMode(
+                    QPainter.CompositionMode.CompositionMode_DestinationOver)
+                painter.fillRect(image.rect(), paperColor)
+            return image
 
     def draw(self, page, painter, key, tile, paperColor=None):
         """Draw a tile on the painter.
