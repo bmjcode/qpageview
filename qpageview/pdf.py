@@ -217,9 +217,7 @@ class PdfDocument(document.SingleSourceDocument):
         return self._document
 
 
-class PdfRenderer(render.AbstractRenderer):
-    oversampleThreshold = 96    # DPI of a standard PC screen
-
+class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
     def tiles(self, width, height):
         """Yield four-tuples Tile(x, y, w, h) describing the tiles to render.
 
@@ -259,15 +257,7 @@ class PdfRenderer(render.AbstractRenderer):
 
         # Oversampling produces more readable output at lower resolutions
         # when painting at "actual size"
-        if actualSize:
-            # If our effective pixel density at this zoom level is below
-            # our threshold, render at double size then downscale
-            xres = 72.0 * key.width / pageSize.width()
-            yres = 72.0 * key.height / pageSize.height()
-            xMultiplier = 2 if xres < self.oversampleThreshold else 1
-            yMultiplier = 2 if yres < self.oversampleThreshold else 1
-        else:
-            xMultiplier = yMultiplier = 1
+        multiplier = self.oversampleFactor(key, pageSize) if actualSize else 1
 
         # Set rendering options
         RenderFlag = QPdfDocumentRenderOptions.RenderFlag
@@ -283,7 +273,7 @@ class PdfRenderer(render.AbstractRenderer):
 
         # Render the image at the output device's resolution (or double
         # that if we are oversampling)
-        s = matrix.scale(xMultiplier, yMultiplier).mapRect(source)
+        s = matrix.scale(multiplier, multiplier).mapRect(source)
         renderSize = QSize(int(s.width()), int(s.height()))
         with locking.lock(doc):
             image = doc.render(num, renderSize, renderOptions)
