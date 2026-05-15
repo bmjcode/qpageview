@@ -28,6 +28,7 @@ PDF rendering backend using QtPdf.
 import platform
 
 from PyQt6.QtCore import Qt, QByteArray, QModelIndex, QRect, QRectF, QSize, QUrl
+from PyQt6.QtGui import QTransform
 from PyQt6.QtPdf import QPdfDocument, QPdfDocumentRenderOptions
 
 # Check for PDF link support (added in Qt 6.6)
@@ -234,6 +235,18 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
         The painter is already at the right position and rotation.
 
         """
+        matrix = painter.deviceTransform()
+        target, image = self._renderTile(page, key, tile, matrix)
+        painter.drawImage(target, image, QRectF(image.rect()))
+
+    def _renderTile(self, page, key, tile, matrix=None):
+        """Render a QImage of the specified tile's contents.
+
+        Returns a tuple (target, image) where `target` is a QRectF specifying
+        in device coordinates where to paint the image, and `image` is the
+        rendered image itself.
+
+        """
         pageSize = page.pageSize()  # in points
         # key and tile coordinates scale with device resolution and zoom level
         source = QRectF(0, 0, key.width, key.height)
@@ -246,7 +259,8 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
         num = page.pageNumber
 
         # We use this to scale from key/tile to device coordinates
-        matrix = painter.deviceTransform()
+        if matrix is None:
+            matrix = QTransform()
 
         # When we are displaying an image on screen, our painter coordinates
         # are "actual size" and scaling is our responsibility. When printing,
@@ -288,7 +302,7 @@ class PdfRenderer(render.OversamplingMixin, render.AbstractRenderer):
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
 
-        painter.drawImage(target, image, QRectF(image.rect()))
+        return target, image
 
 
 def load(source):
